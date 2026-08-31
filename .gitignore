@@ -1,0 +1,30 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+application-local.yml
+application-local.yaml
+
+# Uploaded/generated files
+uploads/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

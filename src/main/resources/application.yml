@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: police-asset-management
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/police_asset_management}
+    username: ${DB_USERNAME:shreygupta}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${SHOW_SQL:false}
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    open-in-view: false
+
+jwt:
+  secret: ${JWT_SECRET:YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY3ODkwYWJjZGVmZ2hpamtsbW5vcA==}
+  expiration: ${JWT_EXPIRATION:86400000}  # 24 hours in milliseconds
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+app:
+  storage:
+    location: ${STORAGE_LOCATION:./uploads}
+
+groq:
+  api-key: ${GROQ_API_KEY:}
+  base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1}
+  chat-model: ${GROQ_CHAT_MODEL:llama-3.3-70b-versatile}
+
+logging:
+  level:
+    com.example.policeassetmanagement: INFO
+    org.hibernate.SQL: ${SHOW_SQL:false}
