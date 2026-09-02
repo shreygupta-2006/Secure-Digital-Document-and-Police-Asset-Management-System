@@ -38,7 +38,7 @@ app:
 groq:
   api-key: ${GROQ_API_KEY:}
   base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1}
-  chat-model: ${GROQ_CHAT_MODEL:llama-3.3-70b-versatile}
+  chat-model: ${GROQ_CHAT_MODEL:openai/gpt-oss-20b}
 
 logging:
   level:

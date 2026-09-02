@@ -13,7 +13,7 @@ public class GroqConfig {
 
     private String apiKey;
     private String baseUrl = "https://api.groq.com/openai/v1";
-    private String chatModel = "llama-3.3-70b-versatile";
+    private String chatModel = "openai/gpt-oss-20b";
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }
