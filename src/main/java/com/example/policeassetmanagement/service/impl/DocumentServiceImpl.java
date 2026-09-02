@@ -6,6 +6,7 @@ import com.example.policeassetmanagement.entity.Document;
 import com.example.policeassetmanagement.entity.DocumentVersion;
 import com.example.policeassetmanagement.entity.User;
 import com.example.policeassetmanagement.entity.enums.DocumentType;
+import com.example.policeassetmanagement.ai.repository.DocumentChunkRepository;
 import com.example.policeassetmanagement.exception.BadRequestException;
 import com.example.policeassetmanagement.exception.ResourceNotFoundException;
 import com.example.policeassetmanagement.repository.DocumentRepository;
@@ -31,6 +32,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
+    private final DocumentChunkRepository documentChunkRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final HashService hashService;
@@ -157,11 +159,20 @@ public class DocumentServiceImpl implements DocumentService {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", "id", id));
 
+        // Delete AI chunks if any
+        if (documentChunkRepository.existsByDocument(document)) {
+            documentChunkRepository.deleteByDocument(document);
+        }
+
         // Delete stored files for all versions
         List<DocumentVersion> versions = documentVersionRepository.findByDocumentOrderByVersionNumberDesc(document);
         for (DocumentVersion v : versions) {
             fileStorageService.delete(v.getFilePath());
+            documentVersionRepository.deleteById(v.getId());
         }
+
+        // Also delete the original document file
+        fileStorageService.delete(document.getFilePath());
 
         documentRepository.deleteById(id);
 
