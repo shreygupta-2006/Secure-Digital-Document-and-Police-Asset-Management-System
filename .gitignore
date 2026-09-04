@@ -28,3 +28,7 @@ uploads/
 # Temporary files
 *.tmp
 *.temp
+test-uploads/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo

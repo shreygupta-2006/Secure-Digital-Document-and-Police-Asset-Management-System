@@ -11,6 +11,7 @@ import com.example.policeassetmanagement.entity.enums.AssetStatus;
 import com.example.policeassetmanagement.exception.BadRequestException;
 import com.example.policeassetmanagement.exception.ResourceNotFoundException;
 import com.example.policeassetmanagement.repository.*;
+import com.example.policeassetmanagement.security.AccessControlService;
 import com.example.policeassetmanagement.service.AssetService;
 import com.example.policeassetmanagement.service.AuditService;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class AssetServiceImpl implements AssetService {
     private final AssetMaintenanceRepository maintenanceRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final AccessControlService accessControlService;
 
     @Override
     public AssetResponse createAsset(AssetRequest request, Long userId, String ip) {
@@ -50,32 +52,47 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional(readOnly = true)
-    public AssetResponse getAssetById(Long id) {
+    public AssetResponse getAssetById(Long id, Long currentUserId) {
         Asset asset = assetRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset", "id", id));
+        assertAssetAccessible(asset, currentUserId);
         return mapToResponse(asset);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public AssetResponse getAssetByCode(String assetCode) {
+    public AssetResponse getAssetByCode(String assetCode, Long currentUserId) {
         Asset asset = assetRepository.findByAssetCode(assetCode)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset", "assetCode", assetCode));
+        assertAssetAccessible(asset, currentUserId);
         return mapToResponse(asset);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<AssetResponse> searchAssets(String status, String category, String location,
-                                             String condition, String search) {
+                                             String condition, String search, Long currentUserId) {
         AssetStatus assetStatus = null;
         AssetCondition assetCondition = null;
         if (status != null) assetStatus = AssetStatus.valueOf(status);
         if (condition != null) assetCondition = AssetCondition.valueOf(condition);
 
         String searchPattern = search != null ? "%" + search + "%" : null;
-        return assetRepository.searchAssets(assetStatus, category, location, assetCondition, searchPattern)
-                .stream().map(this::mapToResponse).toList();
+        List<Asset> results = assetRepository.searchAssets(assetStatus, category, location, assetCondition, searchPattern);
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+
+        if (accessControlService.isAssetScoped(currentUser)) {
+            // SECURITY: assignment-aware filtering — never "if officer, return all".
+            // An officer with zero asset assignments must see zero assets here.
+            List<Long> assignedIds = accessControlService.getAssignedAssetIds(currentUser);
+            results = results.stream()
+                    .filter(a -> assignedIds.contains(a.getId()))
+                    .toList();
+        }
+
+        return results.stream().map(this::mapToResponse).toList();
     }
 
     @Override
@@ -177,6 +194,9 @@ public class AssetServiceImpl implements AssetService {
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset", "id", assetId));
 
+        // SECURITY: an OFFICER may only move an asset that is assigned to them.
+        assertAssetAccessible(asset, userId);
+
         if (asset.getStatus() == AssetStatus.RETIRED) {
             throw new BadRequestException("Cannot move a retired asset");
         }
@@ -186,7 +206,7 @@ public class AssetServiceImpl implements AssetService {
 
         AssetMovement movement = AssetMovement.builder()
                 .asset(asset)
-                .fromLocation(asset.getLocation())
+                .fromLocation(asset.getLocation() != null ? asset.getLocation() : "Unassigned")
                 .toLocation(request.getToLocation())
                 .movedBy(movedBy)
                 .reason(request.getReason())
@@ -263,9 +283,10 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<MaintenanceResponse> getMaintenanceHistory(Long assetId) {
+    public List<MaintenanceResponse> getMaintenanceHistory(Long assetId, Long currentUserId) {
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset", "id", assetId));
+        assertAssetAccessible(asset, currentUserId);
         return maintenanceRepository.findByAssetOrderByCreatedAtDesc(asset)
                 .stream().map(this::mapMaintenanceToResponse).toList();
     }
@@ -297,9 +318,10 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional(readOnly = true)
-    public AssetHistoryResponse getAssetHistory(Long assetId) {
+    public AssetHistoryResponse getAssetHistory(Long assetId, Long currentUserId) {
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new ResourceNotFoundException("Asset", "id", assetId));
+        assertAssetAccessible(asset, currentUserId);
 
         List<AssignmentResponse> assignments = assignmentRepository.findByAssetOrderByAssignedAtDesc(asset)
                 .stream().map(this::mapAssignmentToResponse).toList();
@@ -313,6 +335,20 @@ public class AssetServiceImpl implements AssetService {
                 .movements(movements)
                 .maintenances(maintenances)
                 .build();
+    }
+
+    /**
+     * SECURITY: server-side enforcement of assignment-aware asset access.
+     * An asset that does not exist and an asset the caller is not entitled to
+     * both surface as 404, so that unauthorized IDs cannot be distinguished
+     * from nonexistent ones (no existence-enumeration leak).
+     */
+    private void assertAssetAccessible(Asset asset, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+        if (!accessControlService.canAccessAsset(currentUser, asset.getId())) {
+            throw new ResourceNotFoundException("Asset", "id", asset.getId());
+        }
     }
 
     // --- Mapping helpers ---

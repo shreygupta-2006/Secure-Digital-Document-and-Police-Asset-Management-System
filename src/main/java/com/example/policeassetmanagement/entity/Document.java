@@ -45,6 +45,14 @@ public class Document {
     @Column(length = 256)
     private String fileHash;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean indexed = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "case_id")
+    private Case caseEntity;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "uploaded_by_id", nullable = false)
     private User uploadedBy;

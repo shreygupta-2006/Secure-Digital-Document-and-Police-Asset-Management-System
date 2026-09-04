@@ -65,6 +65,14 @@ public class AIService {
                     "Document Context:\n%s\n\n" +
                     "Question: %s";
 
+    private static final String SUGGESTIONS_PROMPT =
+            "You are a document analysis assistant. Based on the following document content, " +
+                    "generate exactly 4 specific, relevant questions that a user might ask about this document. " +
+                    "The questions must be directly answerable from the document content provided. " +
+                    "Do NOT generate generic or generic police questions. " +
+                    "Do NOT use placeholder text. " +
+                    "Return ONLY a JSON array of 4 question strings, nothing else. Example format: [\"question1\", \"question2\", \"question3\", \"question4\"]";
+
     /**
      * Index a document: extract text → chunk → store.
      */
@@ -114,6 +122,10 @@ public class AIService {
 
             savedChunks.add(chunkRepository.save(chunk));
         }
+
+        // Mark document as indexed
+        document.setIndexed(true);
+        documentRepository.save(document);
 
         auditService.createAuditLog(
                 "DOCUMENT_INDEXED",
@@ -280,6 +292,106 @@ public class AIService {
                 "question", question,
                 "answer", answer,
                 "sources", sources
+        );
+    }
+
+    /**
+     * Generate suggested questions from indexed document chunks.
+     *
+     * Uses the Groq LLM to analyze the document content and suggest
+     * relevant, specific questions that a user might ask about the document.
+     */
+    public Map<String, Object> suggestQuestions(
+            Long documentId,
+            Long userId,
+            String ip
+    ) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Document", "id", documentId)
+                );
+
+        List<DocumentChunk> chunks =
+                chunkRepository.findByDocumentOrderByChunkIndex(document);
+
+        if (chunks.isEmpty()) {
+            throw new BadRequestException(
+                    "Document has not been indexed. Please index it first."
+            );
+        }
+
+        if (!groqConfig.isConfigured()) {
+            throw new IllegalStateException(
+                    "Groq API key not configured. Set GROQ_API_KEY environment variable."
+            );
+        }
+
+        // Reconstruct document text from indexed chunks
+        String text = chunks.stream()
+                .sorted(Comparator.comparingInt(DocumentChunk::getChunkIndex))
+                .map(DocumentChunk::getContent)
+                .collect(Collectors.joining("\n\n---\n\n"));
+
+        if (text.isBlank()) {
+            throw new BadRequestException(
+                    "Indexed document contains no text for generating suggestions"
+            );
+        }
+
+        // Limit text to avoid token limits
+        if (text.length() > 6000) {
+            text = text.substring(0, 6000)
+                    + "\n\n[Document truncated for suggestion generation]";
+        }
+
+        String response = groqService.chatCompletion(
+                SUGGESTIONS_PROMPT,
+                text
+        );
+
+        // Parse the JSON array of questions from the response
+        List<String> suggestions;
+        try {
+            // Strip markdown code fences if present
+            String cleaned = response.trim();
+            if (cleaned.startsWith("```")) {
+                cleaned = cleaned.replaceFirst("```json\\s*", "");
+                cleaned = cleaned.replaceFirst("```", "");
+                cleaned = cleaned.trim();
+            }
+
+            com.fasterxml.jackson.databind.ObjectMapper mapper =
+                    new com.fasterxml.jackson.databind.ObjectMapper();
+            suggestions = mapper.readValue(cleaned,
+                    mapper.getTypeFactory().constructCollectionType(List.class, String.class));
+        } catch (Exception e) {
+            log.warn("Failed to parse suggestions response as JSON: {}", response);
+            // Fallback: split by newlines and filter
+            suggestions = Arrays.stream(response.split("\\n"))
+                    .map(s -> s.replaceAll("^[\"\\[\\],\\s]+|[[\"\\]\\s]+$", "").trim())
+                    .filter(s -> !s.isEmpty() && s.length() > 10)
+                    .limit(4)
+                    .toList();
+        }
+
+        // Ensure exactly 4 suggestions
+        if (suggestions.size() > 4) {
+            suggestions = suggestions.subList(0, 4);
+        }
+
+        auditService.createAuditLog(
+                "DOCUMENT_SUGGESTIONS_GENERATED",
+                "Document",
+                documentId,
+                userId,
+                "Generated " + suggestions.size() + " suggested questions",
+                ip
+        );
+
+        return Map.of(
+                "documentId", documentId,
+                "suggestions", suggestions,
+                "model", groqConfig.getChatModel()
         );
     }
 

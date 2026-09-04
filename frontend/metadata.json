@@ -1,0 +1,6 @@
+{
+  "name": "Police Asset Management System",
+  "description": "Enterprise police department asset tracking, assignments, movements, maintenance workflows, document repository, and AI document intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

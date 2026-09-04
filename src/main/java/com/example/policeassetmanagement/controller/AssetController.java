@@ -39,19 +39,22 @@ public class AssetController {
             @RequestParam(required = false) String location,
             @RequestParam(required = false) String condition,
             @RequestParam(required = false) String search) {
-        return ResponseEntity.ok(assetService.searchAssets(status, category, location, condition, search));
+        Long userId = securityHelper.getCurrentUserId();
+        return ResponseEntity.ok(assetService.searchAssets(status, category, location, condition, search, userId));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AssetResponse> getAssetById(@PathVariable Long id) {
-        return ResponseEntity.ok(assetService.getAssetById(id));
+        Long userId = securityHelper.getCurrentUserId();
+        return ResponseEntity.ok(assetService.getAssetById(id, userId));
     }
 
     @GetMapping("/code/{assetCode}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AssetResponse> getAssetByCode(@PathVariable String assetCode) {
-        return ResponseEntity.ok(assetService.getAssetByCode(assetCode));
+        Long userId = securityHelper.getCurrentUserId();
+        return ResponseEntity.ok(assetService.getAssetByCode(assetCode, userId));
     }
 
     @PutMapping("/{id}")
@@ -108,7 +111,8 @@ public class AssetController {
     @GetMapping("/{id}/maintenance")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<MaintenanceResponse>> getMaintenanceHistory(@PathVariable Long id) {
-        return ResponseEntity.ok(assetService.getMaintenanceHistory(id));
+        Long userId = securityHelper.getCurrentUserId();
+        return ResponseEntity.ok(assetService.getMaintenanceHistory(id, userId));
     }
 
     @PutMapping("/maintenance/{maintenanceId}")
@@ -130,7 +134,8 @@ public class AssetController {
     @GetMapping("/{id}/history")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<AssetHistoryResponse> getAssetHistory(@PathVariable Long id) {
-        return ResponseEntity.ok(assetService.getAssetHistory(id));
+        Long userId = securityHelper.getCurrentUserId();
+        return ResponseEntity.ok(assetService.getAssetHistory(id, userId));
     }
 
     private String getIp(HttpServletRequest request) {

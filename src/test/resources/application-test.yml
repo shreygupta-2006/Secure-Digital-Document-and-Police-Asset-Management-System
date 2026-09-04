@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: police-asset-management
+
+  # IMPORTANT: this points at a dedicated TEST database, distinct from the
+  # developer's real "police_asset_management" database, so that running the
+  # test suite can never touch or delete real data. Override via env vars if
+  # your local Postgres uses different test credentials.
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/police_asset_management_test}
+    username: ${TEST_DB_USERNAME:shreygupta}
+    password: ${TEST_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+
+jwt:
+  secret: dGVzdC1vbmx5LXNlY3JldC1rZXktZm9yLWp1bml0LXRlc3RzLTEyMzQ1Njc4OTA=
+  expiration: 3600000
+
+server:
+  error:
+    include-message: always
+
+app:
+  storage:
+    location: ./test-uploads
+
+groq:
+  api-key: ${GROQ_API_KEY:}
+  base-url: ${GROQ_BASE_URL:https://api.groq.com/openai/v1}
+  chat-model: ${GROQ_CHAT_MODEL:openai/gpt-oss-20b}
+
+logging:
+  level:
+    com.example.policeassetmanagement: INFO

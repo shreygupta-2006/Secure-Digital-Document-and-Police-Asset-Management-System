@@ -18,6 +18,8 @@ public class UserResponse {
     private String email;
     private Role role;
     private UserStatus status;
+    private String badgeNumber;
+    private String department;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

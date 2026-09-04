@@ -7,11 +7,14 @@ import com.example.policeassetmanagement.entity.DocumentVersion;
 import com.example.policeassetmanagement.entity.User;
 import com.example.policeassetmanagement.entity.enums.DocumentType;
 import com.example.policeassetmanagement.ai.repository.DocumentChunkRepository;
+import com.example.policeassetmanagement.entity.Case;
 import com.example.policeassetmanagement.exception.BadRequestException;
 import com.example.policeassetmanagement.exception.ResourceNotFoundException;
+import com.example.policeassetmanagement.repository.CaseRepository;
 import com.example.policeassetmanagement.repository.DocumentRepository;
 import com.example.policeassetmanagement.repository.DocumentVersionRepository;
 import com.example.policeassetmanagement.repository.UserRepository;
+import com.example.policeassetmanagement.security.AccessControlService;
 import com.example.policeassetmanagement.service.AuditService;
 import com.example.policeassetmanagement.service.DocumentService;
 import com.example.policeassetmanagement.service.HashService;
@@ -37,6 +40,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final FileStorageService fileStorageService;
     private final HashService hashService;
     private final AuditService auditService;
+    private final AccessControlService accessControlService;
+    private final CaseRepository caseRepository;
 
     @Override
     public DocumentResponse uploadDocument(DocumentUploadRequest request, MultipartFile file,
@@ -55,6 +60,13 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Could not compute file hash");
         }
 
+        // Link to case if caseId is provided
+        Case linkedCase = null;
+        if (request.getCaseId() != null) {
+            linkedCase = caseRepository.findById(request.getCaseId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Case", "id", request.getCaseId()));
+        }
+
         // Create document metadata
         Document document = Document.builder()
                 .title(request.getTitle())
@@ -65,6 +77,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .contentType(file.getContentType())
                 .fileSize(file.getSize())
                 .fileHash(hash)
+                .caseEntity(linkedCase)
                 .uploadedBy(uploader)
                 .build();
         Document saved = documentRepository.save(document);
@@ -91,9 +104,10 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public DocumentResponse getDocumentById(Long id) {
+    public DocumentResponse getDocumentById(Long id, Long currentUserId) {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", "id", id));
+        assertDocumentAccessible(document, currentUserId);
         Integer latestVersion = getLatestVersionNumber(document);
         return mapToResponse(document, latestVersion);
     }
@@ -108,7 +122,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DocumentResponse> searchDocuments(String title, String type, String hash) {
+    public List<DocumentResponse> searchDocuments(String title, String type, String hash, Long currentUserId) {
         DocumentType docType = null;
         if (type != null) docType = DocumentType.valueOf(type);
 
@@ -129,6 +143,19 @@ public class DocumentServiceImpl implements DocumentService {
             results = documentRepository.searchByHash(hash);
         } else {
             results = documentRepository.findAll();
+        }
+
+        // SECURITY: server-side, assignment-aware filtering. This is applied to
+        // EVERY listing path (not just an opt-in "scope=mine" query param) so
+        // that document visibility cannot be widened simply by omitting a
+        // client-controlled parameter.
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+        if (accessControlService.isDocumentScoped(currentUser)) {
+            List<Long> assignedCaseIds = accessControlService.getAssignedCaseIds(currentUser);
+            results = results.stream()
+                    .filter(d -> d.getCaseEntity() != null && assignedCaseIds.contains(d.getCaseEntity().getId()))
+                    .toList();
         }
 
         return results.stream()
@@ -181,10 +208,34 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public Resource downloadDocument(Long id) {
+    public Resource downloadDocument(Long id, Long currentUserId) {
         Document document = documentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Document", "id", id));
+        assertDocumentAccessible(document, currentUserId);
         return fileStorageService.loadAsResource(document.getFilePath());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getDocumentsForUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+
+        if (!accessControlService.isDocumentScoped(user)) {
+            return getAllDocuments();
+        }
+
+        // SECURITY: assignment-aware filtering — an officer with zero case
+        // assignments must see zero documents (never "if officer, return all").
+        List<Long> assignedCaseIds = accessControlService.getAssignedCaseIds(user);
+
+        if (assignedCaseIds.isEmpty()) {
+            return List.of();
+        }
+
+        return documentRepository.findByCaseEntityIdIn(assignedCaseIds).stream()
+                .map(doc -> mapToResponse(doc, getLatestVersionNumber(doc)))
+                .toList();
     }
 
     @Override
@@ -207,6 +258,27 @@ public class DocumentServiceImpl implements DocumentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Document", "id", id));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public void assertDocumentAccessible(Long documentId, Long currentUserId) {
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document", "id", documentId));
+        assertDocumentAccessible(document, currentUserId);
+    }
+
+    /**
+     * SECURITY: server-side enforcement of case-based, assignment-aware document
+     * access. An unauthorized document ID surfaces as 404 (same as a nonexistent
+     * one) so case membership cannot be probed/enumerated via status codes.
+     */
+    private void assertDocumentAccessible(Document document, Long currentUserId) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", currentUserId));
+        if (!accessControlService.canAccessDocument(currentUser, document)) {
+            throw new ResourceNotFoundException("Document", "id", document.getId());
+        }
+    }
+
     private Integer getLatestVersionNumber(Document doc) {
         return documentVersionRepository.findByDocumentOrderByVersionNumberDesc(doc)
                 .stream().findFirst().map(DocumentVersion::getVersionNumber).orElse(0);
@@ -220,6 +292,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileSize(document.getFileSize()).fileHash(document.getFileHash())
                 .uploadedByName(document.getUploadedBy().getName())
                 .latestVersion(latestVersion)
+                .indexed(Boolean.TRUE.equals(document.getIndexed()))
+                .caseId(document.getCaseEntity() != null ? document.getCaseEntity().getId() : null)
+                .caseNumber(document.getCaseEntity() != null ? document.getCaseEntity().getCaseNumber() : null)
                 .createdAt(document.getCreatedAt()).updatedAt(document.getUpdatedAt())
                 .build();
     }

@@ -22,6 +22,9 @@ public class DocumentResponse {
     private String fileHash;
     private String uploadedByName;
     private Integer latestVersion;
+    private boolean indexed;
+    private Long caseId;
+    private String caseNumber;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

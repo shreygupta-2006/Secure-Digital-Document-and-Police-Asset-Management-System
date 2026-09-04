@@ -12,12 +12,20 @@ public interface AssetService {
 
     AssetResponse createAsset(AssetRequest request, Long userId, String ip);
 
-    AssetResponse getAssetById(Long id);
+    /**
+     * @param currentUserId the requesting user; used to enforce assignment-aware
+     *                       access (an OFFICER may only fetch an asset assigned to them).
+     */
+    AssetResponse getAssetById(Long id, Long currentUserId);
 
-    AssetResponse getAssetByCode(String assetCode);
+    AssetResponse getAssetByCode(String assetCode, Long currentUserId);
 
+    /**
+     * @param currentUserId the requesting user; results are restricted to assets
+     *                       assigned to this user when their role is scoped (OFFICER).
+     */
     List<AssetResponse> searchAssets(String status, String category, String location,
-                                      String condition, String search);
+                                      String condition, String search, Long currentUserId);
 
     List<AssetResponse> getAllAssets();
 
@@ -35,9 +43,9 @@ public interface AssetService {
 
     MaintenanceResponse completeMaintenance(Long maintenanceId, Long userId, String ip);
 
-    List<MaintenanceResponse> getMaintenanceHistory(Long assetId);
+    List<MaintenanceResponse> getMaintenanceHistory(Long assetId, Long currentUserId);
 
     AssetResponse retireAsset(Long assetId, Long userId, String ip);
 
-    AssetHistoryResponse getAssetHistory(Long assetId);
+    AssetHistoryResponse getAssetHistory(Long assetId, Long currentUserId);
 }

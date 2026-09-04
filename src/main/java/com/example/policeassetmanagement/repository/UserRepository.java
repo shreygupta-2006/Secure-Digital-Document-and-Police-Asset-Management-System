@@ -1,6 +1,7 @@
 package com.example.policeassetmanagement.repository;
 
 import com.example.policeassetmanagement.entity.User;
+import com.example.policeassetmanagement.entity.enums.Role;
 import com.example.policeassetmanagement.entity.enums.UserStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -16,4 +17,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 
     List<User> findByStatus(UserStatus status);
+
+    long countByStatus(UserStatus status);
+
+    List<User> findByStatusAndRole(UserStatus status, Role role);
 }

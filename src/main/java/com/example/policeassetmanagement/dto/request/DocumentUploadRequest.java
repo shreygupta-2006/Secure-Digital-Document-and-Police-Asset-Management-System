@@ -22,4 +22,7 @@ public class DocumentUploadRequest {
 
     @Size(max = 1000)
     private String description;
+
+    /** Optional: link the document to a case. */
+    private Long caseId;
 }
